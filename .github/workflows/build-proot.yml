@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [x86_64, aarch64]
+        arch: [x86_64]  # 只编译 x86_64 架构
 
     steps:
       - name: Checkout repository
@@ -30,11 +30,6 @@ jobs:
           # 创建 python2 符号链接
           sudo ln -sf /usr/bin/python2.7 /usr/bin/python2 || true
 
-      - name: Install cross-compilation tools (aarch64 only)
-        if: matrix.arch == 'aarch64'
-        run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-
       - name: Build and install talloc from source
         run: |
           # 下载并编译 talloc
@@ -42,16 +37,10 @@ jobs:
           tar -zxvf talloc-2.1.7.tar.gz
           cd talloc-2.1.7
           
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            ./configure --prefix=/usr/local
-            make
-            sudo make install
-          else
-            # 为 aarch64 交叉编译 talloc
-            ./configure --host=aarch64-linux-gnu --prefix=/usr/aarch64-linux-gnu
-            make
-            sudo make install
-          fi
+          # 只为 x86_64 编译 talloc
+          ./configure --prefix=/usr/local
+          make
+          sudo make install
           
           # 更新库缓存
           sudo ldconfig
@@ -71,25 +60,10 @@ jobs:
           rm -f proot_wrap.c 2>/dev/null || true
           rm -rf extension/python/ 2>/dev/null || true
           
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            # x86_64 构建
-            echo "编译 x86_64 版本..."
-            make -j$(nproc) LDFLAGS="-static -L/usr/local/lib -ltalloc -larchive" EXTENSIONS=""
-            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-          else
-            # aarch64 构建
-            echo "编译 aarch64 版本..."
-            export CC="aarch64-linux-gnu-gcc"
-            export AR="aarch64-linux-gnu-ar"
-            export LD="aarch64-linux-gnu-ld"
-            
-            # 设置库路径
-            export LDFLAGS="-static -L/usr/aarch64-linux-gnu/lib -ltalloc -L/usr/lib/aarch64-linux-gnu -larchive"
-            export CFLAGS="-I/usr/aarch64-linux-gnu/include"
-            
-            make -j$(nproc) EXTENSIONS=""
-            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-          fi
+          # 只编译 x86_64 版本
+          echo "编译 x86_64 版本..."
+          make -j$(nproc) LDFLAGS="-static -L/usr/local/lib -ltalloc -larchive" EXTENSIONS=""
+          cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
 
       - name: Build loader components
         run: |
@@ -118,5 +92,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add static proot binaries for ${{ matrix.arch }} (built with manual talloc)" || echo "无变化可提交"
+          git commit -m "Add static proot binary for x86_64 (aarch64 removed)" || echo "无变化可提交"
           git push || echo "推送失败或无需推送"
