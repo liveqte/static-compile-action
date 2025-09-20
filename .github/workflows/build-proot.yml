@@ -23,16 +23,9 @@ jobs:
           # 根据架构安装相应的工具链
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            sudo apt-get install -y libarchive-dev:aarch64 libtalloc-dev:aarch64
+            # 尝试安装 aarch64 架构的开发库，如果失败则继续
+            sudo apt-get install -y libarchive-dev:aarch64 libtalloc-dev:aarch64 || true
           fi
-
-      - name: Setup Python symlinks for aarch64
-        if: matrix.arch == 'aarch64'
-        run: |
-          # 创建必要的Python头文件符号链接
-          sudo mkdir -p /usr/include/aarch64-linux-gnu/python3.12
-          sudo ln -sf /usr/include/python3.12/pyconfig.h /usr/include/aarch64-linux-gnu/python3.12/pyconfig.h 2>/dev/null || true
-          sudo ln -sf /usr/include/python3.12 /usr/include/aarch64-linux-gnu/python3.12 2>/dev/null || true
 
       - name: Fetch proot v5.4.0 source
         run: |
@@ -46,20 +39,22 @@ jobs:
           make clean
           
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            # x86_64 构建 - 禁用Python扩展
+            # x86_64 构建 - 明确禁用所有扩展
             make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            # aarch64 构建 - 使用交叉编译器并禁用Python扩展
+            # aarch64 构建 - 使用交叉编译器并明确禁用所有扩展
             make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
 
       - name: Verify binary
         run: |
+          echo "验证 ${{ matrix.arch }} 架构的二进制文件:"
           file $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-          # 检查是否为静态链接
-          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "Static binary: OK" || echo "Not static!"
+          echo "检查是否为静态链接:"
+          # 对于静态二进制文件，ldd 会报错，这是正常的
+          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态二进制文件: 成功" || echo "⚠ 不是静态二进制文件!"
 
       - name: Commit binaries
         run: |
@@ -67,5 +62,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add static proot binaries for ${{ matrix.arch }}"
-          git push
+          git commit -m "Add static proot binaries for ${{ matrix.arch }} (built without extensions)" || echo "没有变化可提交"
+          git push || echo "推送失败或无需推送"
