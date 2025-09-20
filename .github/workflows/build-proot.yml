@@ -1,5 +1,6 @@
 name: Build PRoot v5.4.0 (static)
-
+permissions:
+  contents: write
 on:
   workflow_dispatch:
   push:
@@ -31,14 +32,13 @@ jobs:
       - name: 构建
         run: |
           docker exec gcc bash -c 'LDFLAGS="${LDFLAGS} -static" make -C /proot/src proot'
-          mkdir -p bin
-          docker cp gcc:/proot/src/proot bin/proot-x86_64
-
+          mkdir -p $GITHUB_WORKSPACE/bin
+          docker cp gcc:/proot/src/proot $GITHUB_WORKSPACE/bin
       - name: 下载产物
         uses: actions/upload-artifact@v4
         with:
           name: Build
-          path: bin/proot-x86_64
+          path: ${{ github.workspace }}/bin/proot-x86_64
 
       - name: Commit binaries
         run: |
