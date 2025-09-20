@@ -1,36 +1,71 @@
-name: Build PRoot v5.4.0
+name: Build PRoot v5.4.0 (static)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
 
     steps:
-      - name: Checkout source
-        run: |
-          git clone --branch v5.4.0 https://github.com/proot-me/proot.git
-          cd proot
-          echo "SRC_DIR=$PWD" >> $GITHUB_ENV
-          mkdir -p $GITHUB_WORKSPACE/bin
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libarchive-dev libtalloc-dev
+          # 安装基础编译工具
+          sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev
+          
+          # 根据架构安装相应的工具链
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            sudo apt-get install -y libarchive-dev:aarch64 libtalloc-dev:aarch64
+          fi
 
-      - name: Build for x86_64 (static)
+      - name: Setup Python symlinks for aarch64
+        if: matrix.arch == 'aarch64'
+        run: |
+          # 创建必要的Python头文件符号链接
+          sudo mkdir -p /usr/include/aarch64-linux-gnu/python3.12
+          sudo ln -sf /usr/include/python3.12/pyconfig.h /usr/include/aarch64-linux-gnu/python3.12/pyconfig.h 2>/dev/null || true
+          sudo ln -sf /usr/include/python3.12 /usr/include/aarch64-linux-gnu/python3.12 2>/dev/null || true
+
+      - name: Fetch proot v5.4.0 source
+        run: |
+          git clone --depth=1 --branch v5.4.0 https://github.com/proot-me/proot.git
+          echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
+          mkdir -p bin
+
+      - name: Build for ${{ matrix.arch }}
         run: |
           cd $SRC_DIR/src
           make clean
-          make -j$(nproc) LDFLAGS="-static"
-          cp proot $GITHUB_WORKSPACE/bin/proot-x86_64
+          
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            # x86_64 构建 - 禁用Python扩展
+            make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
+            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
+          else
+            # aarch64 构建 - 使用交叉编译器并禁用Python扩展
+            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static" EXTENSIONS=""
+            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
+          fi
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: proot-x86_64
-          path: bin/proot-x86_64
+      - name: Verify binary
+        run: |
+          file $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
+          # 检查是否为静态链接
+          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "Static binary: OK" || echo "Not static!"
+
+      - name: Commit binaries
+        run: |
+          cd $GITHUB_WORKSPACE
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bin/
+          git commit -m "Add static proot binaries for ${{ matrix.arch }}"
+          git push
