@@ -17,8 +17,11 @@ jobs:
 
       - name: 安装依赖
         run: |
-          docker exec gcc bash -c 'apt update -qq'
-          docker exec gcc bash -c 'apt-get install -qq git clang-tools-6.0 curl docutils-common gdb lcov libarchive-dev libtalloc-dev strace swig uthash-dev xsltproc'
+          docker exec gcc bash -c "sed -i 's|deb.debian.org/debian|archive.debian.org/debian|g' /etc/apt/sources.list"
+          docker exec gcc bash -c "sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list"
+          docker exec gcc bash -c "echo 'Acquire::Check-Valid-Until \"false\";' > /etc/apt/apt.conf.d/99ignore-valid-until"
+          docker exec gcc bash -c "apt-get update -qq"
+          docker exec gcc bash -c "apt-get install -y git clang-tools-6.0 curl docutils-common gdb lcov libarchive-dev libtalloc-dev strace swig uthash-dev xsltproc"
 
       - name: 拉取存储库
         run: docker exec gcc bash -c "git clone https://gitlab.com/proot/proot.git /proot"
