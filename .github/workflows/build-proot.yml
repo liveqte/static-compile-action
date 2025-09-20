@@ -1,0 +1,44 @@
+name: Build PRoot v5.4.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+
+    steps:
+      - name: Checkout source
+        run: |
+          git clone --branch v5.4.0 https://github.com/proot-me/proot.git
+          cd proot
+          echo "SRC_DIR=$PWD" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libarchive-dev libtalloc-dev qemu-user-static crossbuild-essential-arm64
+
+      - name: Build for ${{ matrix.arch }}
+        run: |
+          cd $SRC_DIR/src
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            make clean
+            make -j$(nproc)
+            cp proot ../../proot-${{ matrix.arch }}
+          elif [ "${{ matrix.arch }}" = "aarch64" ]; then
+            make clean
+            make -j$(nproc) CC=aarch64-linux-gnu-gcc
+            cp proot ../../proot-${{ matrix.arch }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proot-${{ matrix.arch }}
+          path: proot-${{ matrix.arch }}
