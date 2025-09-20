@@ -39,11 +39,11 @@ jobs:
           make clean
           
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            # x86_64 构建 - 明确禁用所有扩展
+            # 明确设置不编译任何扩展
             make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            # aarch64 构建 - 使用交叉编译器并明确禁用所有扩展
+            # 对于 aarch64，确保 EXTENSIONS 为空
             make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
