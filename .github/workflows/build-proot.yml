@@ -42,14 +42,16 @@ jobs:
           cd $SRC_DIR/src
           make clean
           
-          # 直接移除 Python 扩展目录，确保不会编译
+          # 删除 Python 扩展相关的文件，避免依赖问题
+          rm -f proot_wrap.c
           rm -rf extension/python/
           
+          # 确保 EXTENSIONS 变量为空
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make -j$(nproc) LDFLAGS="-static"
+            make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static"
+            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
 
