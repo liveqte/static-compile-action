@@ -14,8 +14,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git \
-            libarchive-dev libtalloc-dev
+          # 静态链接需要 .a 库，Ubuntu 下 libarchive-dev 与 libtalloc-dev 提供静态库
+          sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev
 
       - name: Fetch proot v5.4.0 source
         run: |
@@ -23,16 +23,30 @@ jobs:
           echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
           mkdir -p bin
 
+      - name: Hard-disable python extension
+        run: |
+          cd "$SRC_DIR/src"
+          # 彻底移除 GNUmakefile 中的 python 扩展条目和目标，防止被默认变量重新拉回
+          sed -i '/extension\/python/d' GNUmakefile
+          # 兼容某些二次生成或变量展开，确保不留 SWIG 产物的依赖
+          sed -i '/proot_wrap\.c/d' GNUmakefile
+          # 再保险：覆盖扩展变量为空（即使 Makefile 中使用 EXTENSIONS，也会被清空）
+          echo 'EXTENSIONS :=' >> GNUmakefile
+
       - name: Build static proot (x86_64)
         run: |
-          cd $SRC_DIR/src
+          cd "$SRC_DIR/src"
           make clean
-          make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
-          cp proot $GITHUB_WORKSPACE/bin/proot-x86_64
+          # 全静态链接；可加上 -s 去符号减少体积
+          make -j"$(nproc)" LDFLAGS="-static -s" CFLAGS="-O2"
+          cp proot "$GITHUB_WORKSPACE/bin/proot-x86_64"
+          # 出厂自检：显示文件信息和尺寸
+          file "$GITHUB_WORKSPACE/bin/proot-x86_64" || true
+          ls -lh "$GITHUB_WORKSPACE/bin/proot-x86_64" || true
 
       - name: Commit binary into bin/
         run: |
-          cd $GITHUB_WORKSPACE
+          cd "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
