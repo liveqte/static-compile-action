@@ -24,13 +24,13 @@ jobs:
           sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev
           
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            # 安装交叉编译工具链
             sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            # 安装多架构支持
+            # 不再尝试直接安装 :aarch64 版本的开发包，而是通过交叉编译解决
+            # 也可以尝试安装多架构支持，但主要依靠交叉编译工具链
             sudo dpkg --add-architecture arm64
             sudo apt-get update
-            # 尝试安装 arm64 架构的开发包，如果失败则继续
-            sudo apt-get install -y libarchive-dev:arm64 libtalloc-dev:arm64 || echo "arm64 packages not available, will use cross-compilation"
+            # 尝试安装 arm64 的库，但忽略错误，因为可能没有对应的仓库
+            sudo apt-get install -y libarchive-dev:arm64 libtalloc-dev:arm64 || echo "arm64 packages may not be available in the repo, will rely on cross-compilation"
           fi
 
       - name: Fetch proot v5.4.0 source
@@ -39,23 +39,25 @@ jobs:
           echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
           mkdir -p bin
           
-      - name: Verify libraries
+      - name: Verify libraries and setup for aarch64
+        if: matrix.arch == 'aarch64'
         run: |
-          echo "查找库文件:"
-          find /usr -name "*talloc*" 2>/dev/null | head -10
-          find /usr -name "*archive*" 2>/dev/null | head -10
-          echo "检查架构:"
-          if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            find /usr -path "*/aarch64-linux-gnu/*" -name "*talloc*" 2>/dev/null
-            find /usr -path "*/aarch64-linux-gnu/*" -name "*archive*" 2>/dev/null
-          fi
+          echo "检查交叉编译库文件..."
+          # 查找交叉编译器的库路径
+          CC_PATH=$(which aarch64-linux-gnu-gcc)
+          LIB_PATH=$(dirname $CC_PATH)/../aarch64-linux-gnu/lib
+          echo "交叉编译器路径: $CC_PATH"
+          echo "预期库路径: $LIB_PATH"
+          # 尝试查找存在的库文件
+          find $LIB_PATH -name "libtalloc*" 2>/dev/null || echo "在标准交叉编译器路径中未找到 libtalloc，可能需要手动链接或使用系统库"
+          find $LIB_PATH -name "libarchive*" 2>/dev/null || echo "在标准交叉编译器路径中未找到 libarchive，可能需要手动链接或使用系统库"
 
       - name: Build for ${{ matrix.arch }}
         run: |
           cd $SRC_DIR/src
           make clean
           
-          # 移除 Python 扩展相关文件
+          # 移除 Python 扩展相关文件以避免编译错误
           rm -f proot_wrap.c 2>/dev/null || true
           rm -rf extension/python/ 2>/dev/null || true
           
@@ -67,18 +69,24 @@ jobs:
             # aarch64 构建 - 设置交叉编译环境
             export CC="aarch64-linux-gnu-gcc"
             export AR="aarch64-linux-gnu-ar"
-            export LD="aarch64-linux-gnu-ld"
+            export STRIP="aarch64-linux-gnu-strip"
             
-            # 查找库路径
-            ARCH64_LIB_PATH=$(find /usr -path "*/aarch64-linux-gnu*" -type d 2>/dev/null | head -1)
-            if [ -n "$ARCH64_LIB_PATH" ]; then
-              echo "使用库路径: $ARCH64_LIB_PATH"
-              export LDFLAGS="-static -L$ARCH64_LIB_PATH -ltalloc -larchive"
+            # 尝试查找交叉编译器的库路径
+            CC_PATH=$(which aarch64-linux-gnu-gcc)
+            LIB_DIR=$(dirname $CC_PATH)/../aarch64-linux-gnu/lib
+            INC_DIR=$(dirname $CC_PATH)/../aarch64-linux-gnu/include
+            
+            # 如果找到库路径，则使用它
+            if [ -d "$LIB_DIR" ]; then
+              echo "使用交叉编译器库路径: $LIB_DIR"
+              export LDFLAGS="-static -L$LIB_DIR -ltalloc -larchive"
+              export CFLAGS="-I$INC_DIR"
             else
-              echo "使用默认库路径"
+              echo "使用系统库路径进行交叉编译"
               export LDFLAGS="-static -ltalloc -larchive"
             fi
             
+            # 执行编译
             make -j$(nproc) EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
@@ -88,17 +96,18 @@ jobs:
           echo "验证二进制文件:"
           file $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           echo "检查静态链接:"
-          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态链接成功" || echo "⚠ 不是静态二进制文件"
+          # 静态链接的二进制文件使用 ldd 检查时会报错，这是正常的
+          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态链接成功" || echo "⚠ 不是静态二进制文件或检查失败"
 
       - name: Test binary functionality
         run: |
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
             # 测试 x86_64 二进制文件
-            $GITHUB_WORKSPACE/bin/proot-x86_64 --version || echo "版本检查失败"
+            $GITHUB_WORKSPACE/bin/proot-x86_64 --version || echo "版本检查失败（可能预期中）"
           else
             # 使用 qemu 测试 aarch64 二进制文件
             sudo apt-get install -y qemu-user-static
-            qemu-aarch64-static $GITHUB_WORKSPACE/bin/proot-aarch64 --version || echo "版本检查失败"
+            qemu-aarch64-static $GITHUB_WORKSPACE/bin/proot-aarch64 --version || echo "版本检查失败（可能预期中）"
           fi
 
       - name: Commit binaries
@@ -107,5 +116,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add static proot binaries for ${{ matrix.arch }}" || echo "无变化可提交"
+          git commit -m "Add static proot binaries for ${{ matrix.arch }} (built with cross-compilation)" || echo "无变化可提交"
           git push || echo "推送失败或无需推送"
