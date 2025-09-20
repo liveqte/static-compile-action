@@ -1,9 +1,7 @@
 name: Build PRoot v5.4.0
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
+  workflow_dispatch:   # 仅手动触发
 
 jobs:
   build:
@@ -13,32 +11,38 @@ jobs:
         arch: [x86_64, aarch64]
 
     steps:
-      - name: Checkout source
-        run: |
-          git clone --branch v5.4.0 https://github.com/proot-me/proot.git
-          cd proot
-          echo "SRC_DIR=$PWD" >> $GITHUB_ENV
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libarchive-dev libtalloc-dev qemu-user-static crossbuild-essential-arm64
+          sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev \
+                                  qemu-user-static crossbuild-essential-arm64
+
+      - name: Fetch proot v5.4.0 source
+        run: |
+          git clone --branch v5.4.0 https://github.com/proot-me/proot.git
+          echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
 
       - name: Build for ${{ matrix.arch }}
         run: |
           cd $SRC_DIR/src
+          make clean
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make clean
             make -j$(nproc)
-            cp proot ../../proot-${{ matrix.arch }}
-          elif [ "${{ matrix.arch }}" = "aarch64" ]; then
-            make clean
-            make -j$(nproc) CC=aarch64-linux-gnu-gcc
-            cp proot ../../proot-${{ matrix.arch }}
+            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
+          else
+            # 禁用 Python 扩展，避免缺少 aarch64 Python 头文件
+            make -j$(nproc) CC=aarch64-linux-gnu-gcc NO_PYTHON=1
+            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: proot-${{ matrix.arch }}
-          path: proot-${{ matrix.arch }}
+      - name: Commit binaries into bin/
+        run: |
+          cd $GITHUB_WORKSPACE
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bin/
+          git commit -m "Add compiled proot binaries for ${{ matrix.arch }}"
+          git push
