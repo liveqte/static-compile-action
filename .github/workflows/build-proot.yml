@@ -1,4 +1,4 @@
-name: Build PRoot v5.4.0 (static)
+name: Build PRoot v5.4.0 (static x86_64)
 
 on:
   workflow_dispatch:   # 仅手动触发
@@ -6,9 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [x86_64, aarch64]
 
     steps:
       - name: Checkout repository
@@ -18,17 +15,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential git \
-            libarchive-dev libtalloc-dev \
-            qemu-user-static crossbuild-essential-arm64 \
-            python3-dev python3-dev:aarch64
-
-      - name: Setup Python environment for aarch64
-        if: matrix.arch == 'aarch64'
-        run: |
-          # 创建符号链接解决头文件路径问题
-          sudo mkdir -p /usr/include/aarch64-linux-gnu/python3.12
-          sudo ln -sf /usr/include/python3.12/pyconfig.h /usr/include/aarch64-linux-gnu/python3.12/pyconfig.h
-          sudo ln -sf /usr/include/python3.12 /usr/include/aarch64-linux-gnu/python3.12
+            libarchive-dev libtalloc-dev
 
       - name: Fetch proot v5.4.0 source
         run: |
@@ -36,25 +23,18 @@ jobs:
           echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
           mkdir -p bin
 
-      - name: Build for ${{ matrix.arch }}
+      - name: Build static proot (x86_64)
         run: |
           cd $SRC_DIR/src
           make clean
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            # 禁用 Python 扩展以避免编译问题
-            make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
-            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-          else
-            # 禁用 Python 扩展并设置正确的编译器
-            make -j$(nproc) CC=aarch64-linux-gnu-gcc LDFLAGS="-static" EXTENSIONS=""
-            cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-          fi
+          make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
+          cp proot $GITHUB_WORKSPACE/bin/proot-x86_64
 
-      - name: Commit binaries into bin/
+      - name: Commit binary into bin/
         run: |
           cd $GITHUB_WORKSPACE
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add static proot binaries for ${{ matrix.arch }}"
+          git commit -m "Add static proot binary (x86_64)"
           git push
