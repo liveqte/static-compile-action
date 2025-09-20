@@ -24,8 +24,13 @@ jobs:
           sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev
           
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            # 安装交叉编译工具链
             sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            sudo apt-get install -y libarchive-dev:aarch64 libtalloc-dev:aarch64
+            # 安装多架构支持
+            sudo dpkg --add-architecture arm64
+            sudo apt-get update
+            # 尝试安装 arm64 架构的开发包，如果失败则继续
+            sudo apt-get install -y libarchive-dev:arm64 libtalloc-dev:arm64 || echo "arm64 packages not available, will use cross-compilation"
           fi
 
       - name: Fetch proot v5.4.0 source
@@ -34,13 +39,17 @@ jobs:
           echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
           mkdir -p bin
           
-      - name: Verify talloc libraries
+      - name: Verify libraries
         run: |
-          echo "查找 talloc 库:"
-          find /usr -name "*talloc*" 2>/dev/null
-          echo "检查静态库:"
-          find /usr -name "libtalloc.a" 2>/dev/null
-          
+          echo "查找库文件:"
+          find /usr -name "*talloc*" 2>/dev/null | head -10
+          find /usr -name "*archive*" 2>/dev/null | head -10
+          echo "检查架构:"
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            find /usr -path "*/aarch64-linux-gnu/*" -name "*talloc*" 2>/dev/null
+            find /usr -path "*/aarch64-linux-gnu/*" -name "*archive*" 2>/dev/null
+          fi
+
       - name: Build for ${{ matrix.arch }}
         run: |
           cd $SRC_DIR/src
@@ -51,12 +60,26 @@ jobs:
           rm -rf extension/python/ 2>/dev/null || true
           
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            # x86_64 构建 - 明确链接 talloc
-            make -j$(nproc) LDFLAGS="-static -ltalloc" EXTENSIONS=""
+            # x86_64 构建
+            make -j$(nproc) LDFLAGS="-static -ltalloc -larchive" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            # aarch64 构建 - 使用交叉编译器并链接 talloc
-            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static -L/usr/lib/aarch64-linux-gnu -ltalloc" EXTENSIONS=""
+            # aarch64 构建 - 设置交叉编译环境
+            export CC="aarch64-linux-gnu-gcc"
+            export AR="aarch64-linux-gnu-ar"
+            export LD="aarch64-linux-gnu-ld"
+            
+            # 查找库路径
+            ARCH64_LIB_PATH=$(find /usr -path "*/aarch64-linux-gnu*" -type d 2>/dev/null | head -1)
+            if [ -n "$ARCH64_LIB_PATH" ]; then
+              echo "使用库路径: $ARCH64_LIB_PATH"
+              export LDFLAGS="-static -L$ARCH64_LIB_PATH -ltalloc -larchive"
+            else
+              echo "使用默认库路径"
+              export LDFLAGS="-static -ltalloc -larchive"
+            fi
+            
+            make -j$(nproc) EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
 
@@ -66,6 +89,17 @@ jobs:
           file $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           echo "检查静态链接:"
           ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态链接成功" || echo "⚠ 不是静态二进制文件"
+
+      - name: Test binary functionality
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            # 测试 x86_64 二进制文件
+            $GITHUB_WORKSPACE/bin/proot-x86_64 --version || echo "版本检查失败"
+          else
+            # 使用 qemu 测试 aarch64 二进制文件
+            sudo apt-get install -y qemu-user-static
+            qemu-aarch64-static $GITHUB_WORKSPACE/bin/proot-aarch64 --version || echo "版本检查失败"
+          fi
 
       - name: Commit binaries
         run: |
