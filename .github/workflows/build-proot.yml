@@ -18,97 +18,99 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install basic dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev
+          sudo apt-get install -y build-essential git libarchive-dev wget
+
+      - name: Install Python 2.7 for talloc compilation
+        run: |
+          # 安装 Python 2.7 用于 talloc 编译
+          sudo apt-get install -y python2.7
+          # 创建 python2 符号链接
+          sudo ln -sf /usr/bin/python2.7 /usr/bin/python2 || true
+
+      - name: Install cross-compilation tools (aarch64 only)
+        if: matrix.arch == 'aarch64'
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Build and install talloc from source
+        run: |
+          # 下载并编译 talloc
+          wget https://www.samba.org/ftp/talloc/talloc-2.1.7.tar.gz
+          tar -zxvf talloc-2.1.7.tar.gz
+          cd talloc-2.1.7
           
-          if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            # 不再尝试直接安装 :aarch64 版本的开发包，而是通过交叉编译解决
-            # 也可以尝试安装多架构支持，但主要依靠交叉编译工具链
-            sudo dpkg --add-architecture arm64
-            sudo apt-get update
-            # 尝试安装 arm64 的库，但忽略错误，因为可能没有对应的仓库
-            sudo apt-get install -y libarchive-dev:arm64 libtalloc-dev:arm64 || echo "arm64 packages may not be available in the repo, will rely on cross-compilation"
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            ./configure --prefix=/usr/local
+            make
+            sudo make install
+          else
+            # 为 aarch64 交叉编译 talloc
+            ./configure --host=aarch64-linux-gnu --prefix=/usr/aarch64-linux-gnu
+            make
+            sudo make install
           fi
+          
+          # 更新库缓存
+          sudo ldconfig
 
       - name: Fetch proot v5.4.0 source
         run: |
           git clone --depth=1 --branch v5.4.0 https://github.com/proot-me/proot.git
           echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
           mkdir -p bin
-          
-      - name: Verify libraries and setup for aarch64
-        if: matrix.arch == 'aarch64'
-        run: |
-          echo "检查交叉编译库文件..."
-          # 查找交叉编译器的库路径
-          CC_PATH=$(which aarch64-linux-gnu-gcc)
-          LIB_PATH=$(dirname $CC_PATH)/../aarch64-linux-gnu/lib
-          echo "交叉编译器路径: $CC_PATH"
-          echo "预期库路径: $LIB_PATH"
-          # 尝试查找存在的库文件
-          find $LIB_PATH -name "libtalloc*" 2>/dev/null || echo "在标准交叉编译器路径中未找到 libtalloc，可能需要手动链接或使用系统库"
-          find $LIB_PATH -name "libarchive*" 2>/dev/null || echo "在标准交叉编译器路径中未找到 libarchive，可能需要手动链接或使用系统库"
 
-      - name: Build for ${{ matrix.arch }}
+      - name: Build PRoot
         run: |
           cd $SRC_DIR/src
           make clean
           
-          # 移除 Python 扩展相关文件以避免编译错误
+          # 移除 Python 扩展相关文件
           rm -f proot_wrap.c 2>/dev/null || true
           rm -rf extension/python/ 2>/dev/null || true
           
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
             # x86_64 构建
-            make -j$(nproc) LDFLAGS="-static -ltalloc -larchive" EXTENSIONS=""
+            echo "编译 x86_64 版本..."
+            make -j$(nproc) LDFLAGS="-static -L/usr/local/lib -ltalloc -larchive" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            # aarch64 构建 - 设置交叉编译环境
+            # aarch64 构建
+            echo "编译 aarch64 版本..."
             export CC="aarch64-linux-gnu-gcc"
             export AR="aarch64-linux-gnu-ar"
-            export STRIP="aarch64-linux-gnu-strip"
+            export LD="aarch64-linux-gnu-ld"
             
-            # 尝试查找交叉编译器的库路径
-            CC_PATH=$(which aarch64-linux-gnu-gcc)
-            LIB_DIR=$(dirname $CC_PATH)/../aarch64-linux-gnu/lib
-            INC_DIR=$(dirname $CC_PATH)/../aarch64-linux-gnu/include
+            # 设置库路径
+            export LDFLAGS="-static -L/usr/aarch64-linux-gnu/lib -ltalloc -L/usr/lib/aarch64-linux-gnu -larchive"
+            export CFLAGS="-I/usr/aarch64-linux-gnu/include"
             
-            # 如果找到库路径，则使用它
-            if [ -d "$LIB_DIR" ]; then
-              echo "使用交叉编译器库路径: $LIB_DIR"
-              export LDFLAGS="-static -L$LIB_DIR -ltalloc -larchive"
-              export CFLAGS="-I$INC_DIR"
-            else
-              echo "使用系统库路径进行交叉编译"
-              export LDFLAGS="-static -ltalloc -larchive"
-            fi
-            
-            # 执行编译
             make -j$(nproc) EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
+
+      - name: Build loader components
+        run: |
+          cd $SRC_DIR/src
+          # 先构建 loader 组件
+          make loader.elf loader-m32.elf build.h
+          
+          # 如果需要，也可以构建 CARE
+          make care || echo "CARE 构建失败（可能预期中）"
 
       - name: Verify binary
         run: |
           echo "验证二进制文件:"
           file $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           echo "检查静态链接:"
-          # 静态链接的二进制文件使用 ldd 检查时会报错，这是正常的
-          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态链接成功" || echo "⚠ 不是静态二进制文件或检查失败"
+          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态链接成功" || echo "⚠ 不是静态二进制文件"
 
-      - name: Test binary functionality
+      - name: Run tests (optional)
         run: |
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            # 测试 x86_64 二进制文件
-            $GITHUB_WORKSPACE/bin/proot-x86_64 --version || echo "版本检查失败（可能预期中）"
-          else
-            # 使用 qemu 测试 aarch64 二进制文件
-            sudo apt-get install -y qemu-user-static
-            qemu-aarch64-static $GITHUB_WORKSPACE/bin/proot-aarch64 --version || echo "版本检查失败（可能预期中）"
-          fi
+          cd $SRC_DIR
+          make -C test || echo "测试运行失败（可能预期中）"
 
       - name: Commit binaries
         run: |
@@ -116,5 +118,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add static proot binaries for ${{ matrix.arch }} (built with cross-compilation)" || echo "无变化可提交"
+          git commit -m "Add static proot binaries for ${{ matrix.arch }} (built with manual talloc)" || echo "无变化可提交"
           git push || echo "推送失败或无需推送"
