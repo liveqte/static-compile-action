@@ -1,4 +1,4 @@
-name: Build PRoot v5.4.0
+name: Build PRoot v5.4.0 (static)
 
 on:
   workflow_dispatch:   # 仅手动触发
@@ -17,24 +17,25 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev \
-                                  qemu-user-static crossbuild-essential-arm64
+          sudo apt-get install -y build-essential git \
+            libarchive-dev libtalloc-dev \
+            qemu-user-static crossbuild-essential-arm64
 
       - name: Fetch proot v5.4.0 source
         run: |
           git clone --branch v5.4.0 https://github.com/proot-me/proot.git
           echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
+          mkdir -p bin
 
       - name: Build for ${{ matrix.arch }}
         run: |
           cd $SRC_DIR/src
           make clean
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make -j$(nproc)
+            make -j$(nproc) LDFLAGS="-static" DISABLE_PYTHON=1
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            # 禁用 Python 扩展，避免缺少 aarch64 Python 头文件
-            make -j$(nproc) CC=aarch64-linux-gnu-gcc NO_PYTHON=1
+            make -j$(nproc) CC=aarch64-linux-gnu-gcc LDFLAGS="-static" DISABLE_PYTHON=1
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
 
@@ -44,5 +45,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add compiled proot binaries for ${{ matrix.arch }}"
+          git commit -m "Add static proot binaries for ${{ matrix.arch }}"
           git push
