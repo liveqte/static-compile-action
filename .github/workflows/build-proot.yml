@@ -42,18 +42,33 @@ jobs:
           cd $SRC_DIR/src
           make clean
           
-          # 删除 Python 扩展相关的文件，避免依赖问题
-          rm -f proot_wrap.c
-          rm -rf extension/python/
+          echo "处理 Python 扩展依赖问题..."
           
-          # 确保 EXTENSIONS 变量为空
+          # 方法1: 删除相关文件
+          rm -f proot_wrap.c 2>/dev/null || true
+          rm -rf extension/python/ 2>/dev/null || true
+          
+          # 方法2: 修改 Makefile 依赖
+          if grep -q "proot_wrap.c" GNUmakefile; then
+            echo "移除 Makefile 中的 Python 扩展依赖..."
+            sed -i '/proot_wrap.c/d' GNUmakefile
+            sed -i '/extension\/python/d' GNUmakefile
+          fi
+          
+          # 方法3: 确保 EXTENSIONS 为空
+          export EXTENSIONS=""
+          
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            echo "编译 x86_64 版本..."
             make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
+            echo "编译 aarch64 版本..."
             make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
+          
+          echo "编译完成！"
 
       - name: Verify binary
         run: |
