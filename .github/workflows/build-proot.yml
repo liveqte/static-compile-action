@@ -1,6 +1,10 @@
 name: Build PRoot v5.4.0 (static)
 
 on:
+  push:
+      branches: [ main ]
+      paths:
+        - '.github/workflows/build-proot.yml'
   workflow_dispatch:
 
 jobs:
@@ -38,13 +42,14 @@ jobs:
           cd $SRC_DIR/src
           make clean
           
+          # 直接移除 Python 扩展目录，确保不会编译
+          rm -rf extension/python/
+          
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            # 明确设置不编译任何扩展
-            make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
+            make -j$(nproc) LDFLAGS="-static"
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            # 对于 aarch64，确保 EXTENSIONS 为空
-            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static" EXTENSIONS=""
+            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static"
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
 
