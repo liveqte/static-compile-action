@@ -1,10 +1,6 @@
 name: Build PRoot v5.4.0 (static)
 
 on:
-  push:
-      branches: [ main ]
-      paths:
-        - '.github/workflows/build-proot.yml'
   workflow_dispatch:
 
 jobs:
@@ -21,14 +17,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          # 安装基础编译工具
           sudo apt-get install -y build-essential git libarchive-dev libtalloc-dev
           
-          # 根据架构安装相应的工具链
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            # 尝试安装 aarch64 架构的开发库，如果失败则继续
-            sudo apt-get install -y libarchive-dev:aarch64 libtalloc-dev:aarch64 || true
+            sudo apt-get install -y libarchive-dev:aarch64 libtalloc-dev:aarch64
           fi
 
       - name: Fetch proot v5.4.0 source
@@ -36,47 +29,39 @@ jobs:
           git clone --depth=1 --branch v5.4.0 https://github.com/proot-me/proot.git
           echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
           mkdir -p bin
-
+          
+      - name: Verify talloc libraries
+        run: |
+          echo "查找 talloc 库:"
+          find /usr -name "*talloc*" 2>/dev/null
+          echo "检查静态库:"
+          find /usr -name "libtalloc.a" 2>/dev/null
+          
       - name: Build for ${{ matrix.arch }}
         run: |
           cd $SRC_DIR/src
           make clean
           
-          echo "处理 Python 扩展依赖问题..."
-          
-          # 方法1: 删除相关文件
+          # 移除 Python 扩展相关文件
           rm -f proot_wrap.c 2>/dev/null || true
           rm -rf extension/python/ 2>/dev/null || true
           
-          # 方法2: 修改 Makefile 依赖
-          if grep -q "proot_wrap.c" GNUmakefile; then
-            echo "移除 Makefile 中的 Python 扩展依赖..."
-            sed -i '/proot_wrap.c/d' GNUmakefile
-            sed -i '/extension\/python/d' GNUmakefile
-          fi
-          
-          # 方法3: 确保 EXTENSIONS 为空
-          export EXTENSIONS=""
-          
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            echo "编译 x86_64 版本..."
-            make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
+            # x86_64 构建 - 明确链接 talloc
+            make -j$(nproc) LDFLAGS="-static -ltalloc" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            echo "编译 aarch64 版本..."
-            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static" EXTENSIONS=""
+            # aarch64 构建 - 使用交叉编译器并链接 talloc
+            make -j$(nproc) CC="aarch64-linux-gnu-gcc" LDFLAGS="-static -L/usr/lib/aarch64-linux-gnu -ltalloc" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
-          
-          echo "编译完成！"
 
       - name: Verify binary
         run: |
-          echo "验证 ${{ matrix.arch }} 架构的二进制文件:"
+          echo "验证二进制文件:"
           file $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-          echo "检查是否为静态链接:"
-          # 对于静态二进制文件，ldd 会报错，这是正常的
-          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态二进制文件: 成功" || echo "⚠ 不是静态二进制文件!"
+          echo "检查静态链接:"
+          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态链接成功" || echo "⚠ 不是静态二进制文件"
 
       - name: Commit binaries
         run: |
@@ -84,5 +69,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add static proot binaries for ${{ matrix.arch }} (built without extensions)" || echo "没有变化可提交"
+          git commit -m "Add static proot binaries for ${{ matrix.arch }}" || echo "无变化可提交"
           git push || echo "推送失败或无需推送"
