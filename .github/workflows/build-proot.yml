@@ -32,10 +32,10 @@ jobs:
           cd $SRC_DIR/src
           make clean
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make -j$(nproc) LDFLAGS="-static" DISABLE_PYTHON=1
+            make -j$(nproc) LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           else
-            make -j$(nproc) CC=aarch64-linux-gnu-gcc LDFLAGS="-static" DISABLE_PYTHON=1
+            make -j$(nproc) CC=aarch64-linux-gnu-gcc LDFLAGS="-static" EXTENSIONS=""
             cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
           fi
 
