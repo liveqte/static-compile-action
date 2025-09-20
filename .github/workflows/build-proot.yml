@@ -9,88 +9,65 @@ on:
 
 jobs:
   build:
+    name: "Test ${{ matrix.SECCOMP == '1' && 'with seccomp' || 'no seccomp' }}"
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x86_64]  # 只编译 x86_64 架构
+        SECCOMP: [ 0, 1 ]
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4  # 更新到最新版本
 
-      - name: Install basic dependencies
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential git libarchive-dev wget
+          sudo apt-get update -qq
+          sudo apt-get install -qq clang-tools-6.0 curl gdb lcov libarchive-dev libtalloc-dev sloccount strace swig uthash-dev python3-dev lzop
 
-      - name: Install Python 2.7 for talloc compilation
-        run: |
-          # 安装 Python 2.7 用于 talloc 编译
-          sudo apt-get install -y python2.7
-          # 创建 python2 符号链接
-          sudo ln -sf /usr/bin/python2.7 /usr/bin/python2 || true
-
-      - name: Build and install talloc from source
-        run: |
-          # 下载并编译 talloc
-          wget https://www.samba.org/ftp/talloc/talloc-2.1.7.tar.gz
-          tar -zxvf talloc-2.1.7.tar.gz
-          cd talloc-2.1.7
-          
-          # 只为 x86_64 编译 talloc
-          ./configure --prefix=/usr/local
-          make
-          sudo make install
-          
-          # 更新库缓存
-          sudo ldconfig
-
-      - name: Fetch proot v5.4.0 source
-        run: |
-          git clone --depth=1 --branch v5.4.0 https://github.com/proot-me/proot.git
-          echo "SRC_DIR=$PWD/proot" >> $GITHUB_ENV
-          mkdir -p bin
+      - name: Info
+        run: sloccount --details .
 
       - name: Build PRoot
         run: |
-          cd $SRC_DIR/src
-          make clean
+          # 创建二进制文件输出目录
+          mkdir -p ../bin
           
-          # 移除 Python 扩展相关文件
-          rm -f proot_wrap.c 2>/dev/null || true
-          rm -rf extension/python/ 2>/dev/null || true
+          # 构建 loader 和配置
+          make -C src loader.elf loader-m32.elf build.h
           
-          # 只编译 x86_64 版本
-          echo "编译 x86_64 版本..."
-          make -j$(nproc) LDFLAGS="-static -L/usr/local/lib -ltalloc -larchive" EXTENSIONS=""
-          cp proot $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-
-      - name: Build loader components
-        run: |
-          cd $SRC_DIR/src
-          # 先构建 loader 组件
-          make loader.elf loader-m32.elf build.h
+          # 构建主程序（使用静态链接）
+          make -C src proot LDFLAGS="-static -ltalloc -larchive" EXTENSIONS=""
           
-          # 如果需要，也可以构建 CARE
-          make care || echo "CARE 构建失败（可能预期中）"
+          # 复制生成的二进制文件到统一目录
+          cp src/proot ../bin/proot-x86_64-seccomp-${{ matrix.SECCOMP }}
 
-      - name: Verify binary
+      - name: Test
         run: |
-          echo "验证二进制文件:"
-          file $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }}
-          echo "检查静态链接:"
-          ldd $GITHUB_WORKSPACE/bin/proot-${{ matrix.arch }} 2>&1 | grep -q "not a dynamic executable" && echo "✓ 静态链接成功" || echo "⚠ 不是静态二进制文件"
+          env ${{ matrix.SECCOMP == '0' && 'PROOT_NO_SECCOMP=1' || '' }} PATH=/bin:/usr/bin:/sbin:/usr/sbin:$PWD/src make -C test -j $(nproc) QUIET_LOG=$PWD/test.log
 
-      - name: Run tests (optional)
+      - name: Log
+        if: always()
+        run: ([ -f test.log ] && cat test.log) || true
+
+      - name: Prepare binaries for commit
         run: |
-          cd $SRC_DIR
-          make -C test || echo "测试运行失败（可能预期中）"
+          # 创建工作区目录（如果不存在）
+          mkdir -p $GITHUB_WORKSPACE/bin
+          # 复制所有生成的二进制文件到工作区
+          cp -r ../bin/* $GITHUB_WORKSPACE/bin/ || echo "没有二进制文件可复制"
 
       - name: Commit binaries
         run: |
           cd $GITHUB_WORKSPACE
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add bin/
-          git commit -m "Add static proot binary for x86_64 (aarch64 removed)" || echo "无变化可提交"
-          git push || echo "推送失败或无需推送"
+          # 检查是否有二进制文件需要提交
+          if [ -n "$(ls -A bin/ 2>/dev/null)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add bin/
+            git commit -m "Add PRoot binaries (seccomp: ${{ matrix.SECCOMP }}) built from $GITHUB_SHA" || echo "无变化可提交"
+            git push || echo "推送失败或无需推送"
+          else
+            echo "没有二进制文件可提交"
+          fi
