@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: 拉取自身git仓库
+        uses: actions/checkout@v4
       - name: 启动 docker
         run: docker run -i -d --name=gcc gcc:7.4.0 bash
 
