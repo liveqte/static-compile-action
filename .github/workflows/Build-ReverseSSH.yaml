@@ -16,8 +16,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Clone reverse-ssh repo
+        run: |
+          git clone https://github.com/Fahrj/reverse-ssh.git
+          cd reverse-ssh
 
       - name: Set up Go
         uses: actions/setup-go@v4
