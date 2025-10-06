@@ -30,10 +30,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
       - name: Build with Makefile
+        working-directory: reverse-ssh
         env:
           RS_PASS: ${{ secrets.RS_PASS }}
         run: |
           make compressed
+
 
       - name: Commit binaries
         run: |
