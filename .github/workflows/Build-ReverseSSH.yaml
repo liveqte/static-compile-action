@@ -4,21 +4,16 @@ permissions:
   contents: write  # 允许推送代码到仓库
 
 on:
-  workflow_dispatch:
   push:
-      branches: [ main ]
-      paths:
-        - '.github/workflows/Build-ReverseSSH.yaml'
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux]
-        goarch: [amd64, arm64]
 
-    name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,23 +26,25 @@ jobs:
       - name: Install upx
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
-      - name: Build reverse-ssh
+      - name: Generate random password
+        id: genpass
+        run: |
+          echo "pass=$(hexdump -n 8 -e '2/4 \"%08x\"' /dev/urandom)" >> $GITHUB_OUTPUT
+
+      - name: Build with Makefile
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          RS_PASS: ${{ steps.genpass.outputs.pass }}
         run: |
           make compressed
-          mkdir -p dist/${GOOS}_${GOARCH}
-          cp bin/reverse-ssh dist/${GOOS}_${GOARCH}/reverse-ssh
 
       - name: Commit binaries
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          mkdir -p binaries/${{ matrix.goos }}_${{ matrix.goarch }}
-          cp dist/${{ matrix.goos }}_${{ matrix.goarch }}/reverse-ssh binaries/${{ matrix.goos }}_${{ matrix.goarch }}/
+          mkdir -p binaries/
+          cp bin/*reverse-ssh* binaries/
 
           git add binaries/
-          git commit -m "Add reverse-ssh binary for ${{ matrix.goos }}/${{ matrix.goarch }}" || echo "No changes to commit"
+          git commit -m "Add reverse-ssh binaries (make compressed)" || echo "No changes to commit"
           git push || echo "Push skipped or failed"
