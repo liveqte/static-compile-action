@@ -1,0 +1,53 @@
+name: Build ReverseSSH
+
+permissions:
+  contents: write  # 允许推送代码到仓库
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux]
+        goarch: [amd64, arm64]
+
+    name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.15'
+
+      - name: Install upx
+        run: sudo apt-get update && sudo apt-get install -y upx-ucl
+
+      - name: Build reverse-ssh
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          make compressed
+          mkdir -p dist/${GOOS}_${GOARCH}
+          cp bin/reverse-ssh dist/${GOOS}_${GOARCH}/reverse-ssh
+
+      - name: Commit binaries
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p binaries/${{ matrix.goos }}_${{ matrix.goarch }}
+          cp dist/${{ matrix.goos }}_${{ matrix.goarch }}/reverse-ssh binaries/${{ matrix.goos }}_${{ matrix.goarch }}/
+
+          git add binaries/
+          git commit -m "Add reverse-ssh binary for ${{ matrix.goos }}/${{ matrix.goarch }}" || echo "No changes to commit"
+          git push || echo "Push skipped or failed"
