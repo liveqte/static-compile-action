@@ -27,14 +27,9 @@ jobs:
       - name: Install upx
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
-      - name: Generate random password
-        id: genpass
-        run: |
-          echo "pass=$(hexdump -n 8 -e '2/4 \"%08x\"' /dev/urandom)" >> $GITHUB_OUTPUT
-
       - name: Build with Makefile
         env:
-          RS_PASS: ${{ steps.genpass.outputs.pass }}
+          RS_PASS: ${{ secrets.RS_PASS }}
         run: |
           make compressed
 
