@@ -6,20 +6,20 @@ permissions:
 on:
   workflow_dispatch:
   push:
-      branches: [ main ]
-      paths:
-        - '.github/workflows/Build-ReverseSSH.yaml'
-
+    branches: [ main ]
+    paths:
+      - '.github/workflows/Build-ReverseSSH.yaml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
       - name: Clone reverse-ssh repo
-        run: |
-          git clone https://github.com/Fahrj/reverse-ssh.git
-          cd reverse-ssh
+        run: git clone https://github.com/Fahrj/reverse-ssh.git
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -29,23 +29,22 @@ jobs:
       - name: Install upx
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
-      - name: Build with Makefile
+      - name: Build reverse-ssh
         working-directory: reverse-ssh
         env:
           RS_PASS: ${{ secrets.RS_PASS }}
+        run: make compressed
+
+      - name: Copy binaries to /bin
         run: |
-          make compressed
+          mkdir -p bin/
+          cp reverse-ssh/bin/*reverse-ssh* bin/
 
-
-      - name: Commit binaries
+      - name: Commit binaries to current repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-      
-          mkdir -p binaries/
-          cp reverse-ssh/bin/*reverse-ssh* binaries/
-      
-          git add binaries/
-          git commit -m "Add reverse-ssh binaries (make compressed)" || echo "No changes to commit"
-          git push || echo "Push skipped or failed"
 
+          git add bin/
+          git commit -m "Update reverse-ssh binaries" || echo "No changes to commit"
+          git push || echo "Push skipped or failed"
