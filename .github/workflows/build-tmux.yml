@@ -1,0 +1,51 @@
+name: Build tmux (static)
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-tmux.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取自身仓库
+        uses: actions/checkout@v4
+
+      - name: 启动 Docker 容器
+        run: docker run -i -d --name=tmux-builder gcc:7.4.0 bash
+
+      - name: 安装依赖
+        run: |
+          docker exec tmux-builder bash -c "apt-get update -qq"
+          docker exec tmux-builder bash -c "apt-get install -y git build-essential pkg-config libevent-dev libncurses-dev autoconf automake"
+
+      - name: 拉取 tmux 源码
+        run: docker exec tmux-builder bash -c "git clone https://github.com/tmux/tmux.git /tmux"
+
+      - name: 构建静态 tmux
+        run: |
+          docker exec tmux-builder bash -c "cd /tmux && sh autogen.sh"
+          docker exec tmux-builder bash -c "cd /tmux && ./configure CFLAGS='-static' LDFLAGS='-static'"
+          docker exec tmux-builder bash -c "cd /tmux && make -j$(nproc)"
+          mkdir -p $GITHUB_WORKSPACE/bin
+          docker cp tmux-builder:/tmux/tmux $GITHUB_WORKSPACE/bin
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmux-static
+          path: ${{ github.workspace }}/bin/tmux
+
+      - name: 提交产物到主线
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bin/
+          git commit -m "Add static tmux binary built from $GITHUB_SHA" || echo "无变化可提交"
+          git push || echo "推送失败或无需推送"
