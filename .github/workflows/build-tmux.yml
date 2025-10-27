@@ -1,4 +1,5 @@
 name: Build tmux (static)
+
 permissions:
   contents: write
 
@@ -17,24 +18,20 @@ jobs:
       - name: 拉取自身仓库
         uses: actions/checkout@v4
 
-      - name: 启动 Docker 容器
-        run: docker run -i -d --name=tmux-builder gcc:7.4.0 bash
-
       - name: 安装依赖
         run: |
-          docker exec tmux-builder bash -c "apt-get update -qq"
-          docker exec tmux-builder bash -c "apt-get install -y git build-essential pkg-config libevent-dev libncurses-dev autoconf automake"
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake pkg-config libevent-dev libncurses-dev
 
       - name: 拉取 tmux 源码
-        run: docker exec tmux-builder bash -c "git clone https://github.com/tmux/tmux.git /tmux"
-
-      - name: 构建静态 tmux
         run: |
-          docker exec tmux-builder bash -c "cd /tmux && sh autogen.sh"
-          docker exec tmux-builder bash -c "cd /tmux && ./configure CFLAGS='-static' LDFLAGS='-static'"
-          docker exec tmux-builder bash -c "cd /tmux && make -j$(nproc)"
+          git clone https://github.com/tmux/tmux.git
+          cd tmux
+          sh autogen.sh
+          ./configure CFLAGS="-static" LDFLAGS="-static"
+          make -j$(nproc)
           mkdir -p $GITHUB_WORKSPACE/bin
-          docker cp tmux-builder:/tmux/tmux $GITHUB_WORKSPACE/bin
+          cp tmux $GITHUB_WORKSPACE/bin/
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
