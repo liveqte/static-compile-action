@@ -18,18 +18,29 @@ jobs:
       - name: 拉取自身仓库
         uses: actions/checkout@v4
 
-      - name: 安装依赖
+      - name: 安装依赖和纯净的 musl 工具链
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential git musl-tools
 
-      - name: 拉取 microsocks 源码并编译 (musl 静态)
+      - name: 拉取 microsocks 源码
         run: |
           git clone https://github.com/rofl0r/microsocks.git
+
+      - name: 使用 musl-gcc 进行静态编译
+        run: |
           cd microsocks
-          make CC="musl-gcc" CFLAGS="-O2 -static"
+          # 使用 musl-gcc 并明确传递静态链接标志
+          make CC="musl-gcc" CFLAGS="-O2 -static -D_DEFAULT_SOURCE" LDFLAGS="-static"
           mkdir -p $GITHUB_WORKSPACE/bin
           cp microsocks $GITHUB_WORKSPACE/bin/
+
+      - name: 验证二进制文件
+        run: |
+          file $GITHUB_WORKSPACE/bin/microsocks
+          ldd $GITHUB_WORKSPACE/bin/microsocks 2>&1 || echo "ldd 检查可能失败，但对于静态二进制文件是正常的"
+          # 检查是否仍然依赖 GLIBC
+          readelf -a $GITHUB_WORKSPACE/bin/microsocks | grep -i "glibc" || echo "未找到 GLIBC 依赖，很好！"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
