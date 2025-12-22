@@ -29,12 +29,13 @@ jobs:
           tar xf unzip60.tar.gz
           mv unzip60 unzip-src
 
-      - name: 使用 musl-gcc 静态编译 unzip
+      - name: 使用官方推荐方法 + musl 静态编译
         run: |
           cd unzip-src
-          # 使用官方 unix Makefile，强制静态链接
-          make -f unix/Makefile CC="musl-gcc" \
-            CFLAGS="-O2 -static -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64" \
+          make -f unix/Makefile generic \
+            CC="musl-gcc" \
+            LOCAL_UNZIP="-DUNIX" \
+            CFLAGS="-O2 -static" \
             LDFLAGS="-static"
 
           mkdir -p $GITHUB_WORKSPACE/bin
@@ -43,7 +44,7 @@ jobs:
       - name: 验证二进制文件
         run: |
           file $GITHUB_WORKSPACE/bin/unzip
-          ldd $GITHUB_WORKSPACE/bin/unzip 2>&1 || echo "ldd 检查失败是正常的（静态文件）"
+          ldd $GITHUB_WORKSPACE/bin/unzip 2>&1 || echo "静态文件无依赖，ldd 报错正常"
           readelf -a $GITHUB_WORKSPACE/bin/unzip | grep -i "glibc" || echo "未找到 GLIBC 依赖，静态编译成功！"
 
       - name: 上传产物
