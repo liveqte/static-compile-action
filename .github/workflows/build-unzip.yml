@@ -29,11 +29,9 @@ jobs:
 
       - name: 安装 musl-cross（用于 arm64）
         if: matrix.arch == 'arm64'
-        run: |
-          wget https://more.musl.cc/11.2.1/aarch64-linux-musl-cross.tgz
-          tar xf aarch64-linux-musl-cross.tgz
-          echo "$PWD/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
-
+        uses: Lesmiscore/musl-cross-compilers@heracles  # 或最新tag
+        with:
+          target: aarch64-linux-musl  # 指定target
 
       - name: 下载 unzip 源码
         run: |
