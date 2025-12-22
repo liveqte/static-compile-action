@@ -46,7 +46,8 @@ jobs:
 
           make -f unix/Makefile clean || true
 
-          make -f unix/Makefile generic \
+          # 使用 linux_noasm 目标避免 Makefile 强制 PIE
+          make -f unix/Makefile linux_noasm \
             CC="$CC" \
             LOCAL_UNZIP="-DUNIX" \
             CFLAGS="-O2 -static -no-pie" \
