@@ -22,18 +22,25 @@ jobs:
       - name: 拉取自身仓库
         uses: actions/checkout@v4
 
-      - name: 安装依赖和 musl 工具链
+      - name: 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git musl-tools wget qemu-user-static
+          sudo apt-get install -y build-essential git wget musl-tools
 
-      - name: 下载 unzip 源码（Info-ZIP 官方）
+      - name: 安装 musl-cross（用于 arm64）
+        if: matrix.arch == 'arm64'
+        run: |
+          wget https://musl.cc/aarch64-linux-musl-cross.tgz
+          tar xf aarch64-linux-musl-cross.tgz
+          echo "$PWD/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
+
+      - name: 下载 unzip 源码
         run: |
           wget https://downloads.sourceforge.net/infozip/unzip60.tar.gz
           tar xf unzip60.tar.gz
           mv unzip60 unzip-src
 
-      - name: 使用 musl 静态编译 unzip（多架构）
+      - name: 编译 unzip（静态 musl）
         run: |
           cd unzip-src
 
@@ -58,7 +65,6 @@ jobs:
         run: |
           file $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }}
           ldd $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }} 2>&1 || echo "静态文件无依赖，ldd 报错正常"
-          readelf -a $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }} | grep -i "glibc" || echo "未找到 GLIBC 依赖，静态编译成功！"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
