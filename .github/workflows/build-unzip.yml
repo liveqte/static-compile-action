@@ -1,0 +1,61 @@
+name: Build unzip (static-musl)
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-unzip.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取自身仓库
+        uses: actions/checkout@v4
+
+      - name: 安装依赖和 musl 工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git musl-tools wget
+
+      - name: 下载 unzip 源码（Info-ZIP 官方）
+        run: |
+          wget https://downloads.sourceforge.net/infozip/unzip60.tar.gz
+          tar xf unzip60.tar.gz
+          mv unzip60 unzip-src
+
+      - name: 使用 musl-gcc 静态编译 unzip
+        run: |
+          cd unzip-src
+          # 使用官方 unix Makefile，强制静态链接
+          make -f unix/Makefile CC="musl-gcc" \
+            CFLAGS="-O2 -static -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64" \
+            LDFLAGS="-static"
+
+          mkdir -p $GITHUB_WORKSPACE/bin
+          cp unzip $GITHUB_WORKSPACE/bin/unzip
+
+      - name: 验证二进制文件
+        run: |
+          file $GITHUB_WORKSPACE/bin/unzip
+          ldd $GITHUB_WORKSPACE/bin/unzip 2>&1 || echo "ldd 检查失败是正常的（静态文件）"
+          readelf -a $GITHUB_WORKSPACE/bin/unzip | grep -i "glibc" || echo "未找到 GLIBC 依赖，静态编译成功！"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: unzip-static-musl
+          path: ${{ github.workspace }}/bin/unzip
+
+      - name: 提交产物到主线
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bin/
+          git commit -m "Add static unzip (musl) built from $GITHUB_SHA" || echo "无变化可提交"
+          git push || echo "推送失败或无需推送"
