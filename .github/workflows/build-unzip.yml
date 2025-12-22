@@ -1,4 +1,4 @@
-name: Build unzip (static-musl multi-arch)
+name: Build unzip (static-glibc multi-arch)
 
 permissions:
   contents: write
@@ -22,16 +22,11 @@ jobs:
       - name: 拉取自身仓库
         uses: actions/checkout@v4
 
-      - name: 安装依赖
+      - name: 安装依赖（包含 arm64 glibc 交叉编译器）
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git wget musl-tools xz-utils
-
-      - name: 安装 musl-cross（用于 arm64）
-        if: matrix.arch == 'arm64'
-        uses: Lesmiscore/musl-cross-compilers@heracles  # 或最新tag
-        with:
-          target: aarch64-linux-musl  # 指定target
+          sudo apt-get install -y build-essential git wget xz-utils \
+            gcc-aarch64-linux-gnu
 
       - name: 下载 unzip 源码
         run: |
@@ -39,14 +34,14 @@ jobs:
           tar xf unzip60.tar.gz
           mv unzip60 unzip-src
 
-      - name: 编译 unzip（静态 musl）
+      - name: 编译 unzip（glibc 静态）
         run: |
           cd unzip-src
 
           if [ "${{ matrix.arch }}" = "amd64" ]; then
-            export CC="musl-gcc"
+            export CC="gcc"
           else
-            export CC="aarch64-linux-musl-gcc"
+            export CC="aarch64-linux-gnu-gcc"
           fi
 
           make -f unix/Makefile clean || true
@@ -54,8 +49,8 @@ jobs:
           make -f unix/Makefile generic \
             CC="$CC" \
             LOCAL_UNZIP="-DUNIX" \
-            CFLAGS="-O2 -static" \
-            LDFLAGS="-static"
+            CFLAGS="-O2 -static -no-pie" \
+            LDFLAGS="-static -no-pie"
 
           mkdir -p $GITHUB_WORKSPACE/bin
           cp unzip $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }}
@@ -68,7 +63,7 @@ jobs:
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: unzip-static-musl-${{ matrix.arch }}
+          name: unzip-static-glibc-${{ matrix.arch }}
           path: ${{ github.workspace }}/bin/unzip-${{ matrix.arch }}
 
       - name: 提交产物到主线
