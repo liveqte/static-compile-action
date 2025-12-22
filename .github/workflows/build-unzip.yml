@@ -1,4 +1,4 @@
-name: Build unzip (static-musl)
+name: Build unzip (static-musl multi-arch)
 
 permissions:
   contents: write
@@ -14,6 +14,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+
     steps:
       - name: 拉取自身仓库
         uses: actions/checkout@v4
@@ -21,7 +25,7 @@ jobs:
       - name: 安装依赖和 musl 工具链
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git musl-tools wget
+          sudo apt-get install -y build-essential git musl-tools wget qemu-user-static
 
       - name: 下载 unzip 源码（Info-ZIP 官方）
         run: |
@@ -29,34 +33,43 @@ jobs:
           tar xf unzip60.tar.gz
           mv unzip60 unzip-src
 
-      - name: 使用官方推荐方法 + musl 静态编译
+      - name: 使用 musl 静态编译 unzip（多架构）
         run: |
           cd unzip-src
+
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            export CC="musl-gcc"
+          else
+            export CC="aarch64-linux-musl-gcc"
+          fi
+
+          make -f unix/Makefile clean || true
+
           make -f unix/Makefile generic \
-            CC="musl-gcc" \
+            CC="$CC" \
             LOCAL_UNZIP="-DUNIX" \
             CFLAGS="-O2 -static" \
             LDFLAGS="-static"
 
           mkdir -p $GITHUB_WORKSPACE/bin
-          cp unzip $GITHUB_WORKSPACE/bin/unzip
+          cp unzip $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }}
 
       - name: 验证二进制文件
         run: |
-          file $GITHUB_WORKSPACE/bin/unzip
-          ldd $GITHUB_WORKSPACE/bin/unzip 2>&1 || echo "静态文件无依赖，ldd 报错正常"
-          readelf -a $GITHUB_WORKSPACE/bin/unzip | grep -i "glibc" || echo "未找到 GLIBC 依赖，静态编译成功！"
+          file $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }}
+          ldd $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }} 2>&1 || echo "静态文件无依赖，ldd 报错正常"
+          readelf -a $GITHUB_WORKSPACE/bin/unzip-${{ matrix.arch }} | grep -i "glibc" || echo "未找到 GLIBC 依赖，静态编译成功！"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: unzip-static-musl
-          path: ${{ github.workspace }}/bin/unzip
+          name: unzip-static-musl-${{ matrix.arch }}
+          path: ${{ github.workspace }}/bin/unzip-${{ matrix.arch }}
 
       - name: 提交产物到主线
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bin/
-          git commit -m "Add static unzip (musl) built from $GITHUB_SHA" || echo "无变化可提交"
+          git commit -m "Add static unzip (${{ matrix.arch }}) built from $GITHUB_SHA" || echo "无变化可提交"
           git push || echo "推送失败或无需推送"
