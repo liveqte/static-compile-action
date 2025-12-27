@@ -19,17 +19,29 @@ jobs:
         uses: docker/setup-buildx-action@v3
         
       - name: Build ebpfkit in Docker
+        # 核心：从 Secrets 中读取并映射为环境变量
+        env:
+          EBPFKIT_URL: ${{ secrets.EBPFKIT_URL }}
         run: |
-          docker buildx build --load -t ebpfkit-builder -f - . <<EOF
+          # 检查 Secret 是否存在（防止 Secret 没配置导致 curl 失败）
+          if [ -z "$EBPFKIT_URL" ]; then
+            echo "Error: EBPFKIT_URL secret is not set."
+            exit 1
+          fi
+
+          docker buildx build --load \
+            --build-arg EBPFKIT_URL="$EBPFKIT_URL" \
+            -t ebpfkit-builder -f - . <<EOF
           FROM ubuntu:20.04
           ENV DEBIAN_FRONTEND=noninteractive
 
-          RUN apt-get update && apt-get install -y wget gnupg software-properties-common && \
+          # 安装必要工具
+          RUN apt-get update && apt-get install -y wget gnupg software-properties-common curl && \
               wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
               add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main" && \
               apt-get update
 
-          RUN apt-get install -y build-essential clang-11 llvm-11 graphviz git wget linux-headers-generic && \
+          RUN apt-get install -y build-essential clang-11 llvm-11 graphviz git linux-headers-generic && \
               rm -rf /var/lib/apt/lists/*
 
           # 安装 Go 1.18.10
@@ -40,18 +52,22 @@ jobs:
           ENV PATH="/usr/local/go/bin:/root/go/bin:\${PATH}"
           ENV GO111MODULE=on
 
-          # 修复点：使用 go install 安装 go-bindata
           RUN go install github.com/go-bindata/go-bindata/...@latest
 
           RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-11 100 && \
               update-alternatives --install /usr/bin/llc llc /usr/bin/llc-11 100
 
-          # 编译 ebpfkit
+          # 接收构建参数
+          ARG EBPFKIT_URL
+
+          # 克隆 -> 替换 Makefile -> 编译
           RUN git clone https://github.com/Gui774ume/ebpfkit.git /src/ebpfkit && \
               cd /src/ebpfkit && \
+              echo "Fetching custom Makefile..." && \
+              curl -sSL \${EBPFKIT_URL} -o Makefile && \
               make
           EOF
-
+          
       - name: Extract binaries from Docker
         run: |
           # 创建临时容器以拷贝文件
