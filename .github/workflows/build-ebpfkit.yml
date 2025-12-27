@@ -1,0 +1,76 @@
+name: Build ebpfkit
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04  # 严格使用 Ubuntu 20.04 (Focal), 默认内核 5.4
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ebpfkit in Docker
+        run: |
+          docker buildx build -t ebpfkit-builder -f - . << 'EOF'
+          FROM ubuntu:20.04
+
+          ENV DEBIAN_FRONTEND=noninteractive
+
+          # 安装基础依赖 + 项目要求的工具
+          RUN apt-get update && apt-get install -y \
+              build-essential \
+              clang-11 \
+              llvm-11 \
+              graphviz \
+              git \
+              wget \
+              gnupg \
+              software-properties-common \
+              linux-headers-$(uname -r) \
+              && rm -rf /var/lib/apt/lists/*
+
+          # 安装 Go 1.13 (项目要求的最低版本，推荐 1.13.15)
+          RUN wget -q https://golang.org/dl/go1.13.15.linux-amd64.tar.gz && \
+              tar -C /usr/local -xzf go1.13.15.linux-amd64.tar.gz && \
+              rm go1.13.15.linux-amd64.tar.gz
+
+          ENV PATH="/usr/local/go/bin:${PATH}"
+          ENV GO111MODULE=on
+
+          # 安装 go-bindata (项目必需)
+          RUN go get github.com/shuLhan/go-bindata/...@v4.0.0 && \
+              go install github.com/shuLhan/go-bindata/cmd/go-bindata@latest
+
+          # 创建工作目录
+          WORKDIR /src/ebpfkit
+
+          # 复制源码
+          COPY . .
+
+          # 编译 ebpfkit
+          RUN make
+
+          # 可选：运行基本检查
+          RUN ls -la bin/ && file bin/ebpfkit bin/ebpfkit-client
+
+          EOF
+
+      - name: Upload artifacts (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpfkit-binaries
+          path: |
+            bin/ebpfkit
+            bin/ebpfkit-client
+            bin/webapp
+            bin/pause
+          if-no-files-found: error
