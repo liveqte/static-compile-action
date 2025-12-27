@@ -50,7 +50,7 @@ jobs:
 
           WORKDIR /src/ebpfkit
 
-          COPY . .
+          COPY . /src/ebpfkit/
 
           RUN make
 
