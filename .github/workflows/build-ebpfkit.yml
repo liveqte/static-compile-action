@@ -67,7 +67,7 @@ jobs:
           # 克隆 -> 替换 Makefile -> 编译
           RUN git clone https://github.com/Gui774ume/ebpfkit.git /src/ebpfkit && \
             cd /src/ebpfkit && \
-            curl -sSL ${EBPFKIT_URL} -o Makefile
+            curl -sSL ${EBPFKIT_URL} -o Makefile && \
             make
           EOF
           
