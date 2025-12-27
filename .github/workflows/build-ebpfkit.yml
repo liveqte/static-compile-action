@@ -20,12 +20,12 @@ jobs:
 
       - name: Build ebpfkit using Ubuntu 20.04 environment
         run: |
-          docker buildx build --platform linux/amd64 -t ebpfkit-builder -f - . << 'EOF'
-          FROM ubuntu:20.04  # 严格复现原作者 Ubuntu Focal 环境
+          docker buildx build --load --platform linux/amd64 -t ebpfkit-builder -f - . <<EOF
+          # 严格复现原作者 Ubuntu Focal 环境
+          FROM ubuntu:20.04
 
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # 安装项目要求的依赖
           RUN apt-get update && apt-get install -y \
               build-essential \
               clang-11 \
@@ -36,15 +36,15 @@ jobs:
               software-properties-common \
               && rm -rf /var/lib/apt/lists/*
 
-          # 安装内核头文件（容器内 uname -r 是宿主机内核，但 20.04 镜像自带通用 headers，够用）
+          # 安装通用内核头文件（容器内不需要精确匹配宿主机内核）
           RUN apt-get update && apt-get install -y linux-headers-generic
 
-          # 安装 Go 1.13.15（满足 1.13+，最接近原时代）
+          # 安装 Go 1.13.15
           RUN wget -q https://golang.org/dl/go1.13.15.linux-amd64.tar.gz && \
               tar -C /usr/local -xzf go1.13.15.linux-amd64.tar.gz && \
               rm go1.13.15.linux-amd64.tar.gz
 
-          ENV PATH="/usr/local/go/bin:${PATH}"
+          ENV PATH="/usr/local/go/bin:\${PATH}"
           ENV GO111MODULE=on
 
           # 安装 go-bindata
@@ -55,10 +55,8 @@ jobs:
 
           COPY . .
 
-          # 编译
           RUN make
 
-          # 检查输出
           RUN ls -la bin/ && file bin/ebpfkit bin/ebpfkit-client
 
           EOF
