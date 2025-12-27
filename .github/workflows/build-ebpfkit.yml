@@ -18,7 +18,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
-- name: Build ebpfkit using Ubuntu 20.04 environment
+      - name: Build ebpfkit using Ubuntu 20.04 environment
         run: |
           docker buildx build --load --platform linux/amd64 -t ebpfkit-builder -f - . <<EOF
           # 严格复现原作者 Ubuntu Focal 环境
