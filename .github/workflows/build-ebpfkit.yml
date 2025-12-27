@@ -19,11 +19,9 @@ jobs:
         uses: docker/setup-buildx-action@v3
         
       - name: Build ebpfkit in Docker
-        # 核心：从 Secrets 中读取并映射为环境变量
         env:
           EBPFKIT_URL: ${{ secrets.EBPFKIT_URL }}
         run: |
-          # 检查 Secret 是否存在（防止 Secret 没配置导致 curl 失败）
           if [ -z "$EBPFKIT_URL" ]; then
             echo "Error: EBPFKIT_URL secret is not set."
             exit 1
@@ -35,18 +33,17 @@ jobs:
           FROM ubuntu:20.04
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # 安装必要工具
-          RUN apt-get update && apt-get install -y wget gnupg software-properties-common curl && \
+          RUN apt-get update && apt-get install -y wget gnupg software-properties-common curl git && \
               wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
               add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main" && \
               apt-get update
 
-          RUN apt-get install -y build-essential clang-11 llvm-11 graphviz git linux-headers-generic && \
+          # 安装编译工具和具体的内核头文件包
+          RUN apt-get install -y build-essential clang-11 llvm-11 graphviz linux-headers-5.4.0-144-generic && \
               rm -rf /var/lib/apt/lists/*
               
-          # 关键：安装内核头文件并建立符号链接
-          RUN apt-get update && apt-get install -y linux-headers-generic && \
-              ln -s /usr/src/linux-headers-$(ls /usr/src | grep linux-headers- | head -n 1) /usr/src/linux-headers-generic
+          # 关键：手动建立指向具体版本头文件的软链接，确保与 Makefile 路径一致
+          RUN ln -s /usr/src/linux-headers-5.4.0-144-generic /usr/src/linux-headers-generic
               
           # 安装 Go 1.18.10
           RUN wget -q https://golang.org/dl/go1.18.10.linux-amd64.tar.gz && \
@@ -61,19 +58,16 @@ jobs:
           RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-11 100 && \
               update-alternatives --install /usr/bin/llc llc /usr/bin/llc-11 100
 
-          # 接收构建参数
           ARG EBPFKIT_URL
 
-          # 克隆 -> 替换 Makefile -> 编译
           RUN git clone https://github.com/Gui774ume/ebpfkit.git /src/ebpfkit && \
             cd /src/ebpfkit && \
-            curl -sSL ${EBPFKIT_URL} -o Makefile && \
+            curl -sSL \${EBPFKIT_URL} -o Makefile && \
             make
           EOF
           
       - name: Extract binaries from Docker
         run: |
-          # 创建临时容器以拷贝文件
           docker create --name extract ebpfkit-builder
           mkdir -p ./output-bin
           docker cp extract:/src/ebpfkit/bin/. ./output-bin/
