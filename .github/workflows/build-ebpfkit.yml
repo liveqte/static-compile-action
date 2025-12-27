@@ -48,8 +48,8 @@ jobs:
           ENV GO111MODULE=on
 
           # 安装 go-bindata
-          RUN go get github.com/shuLhan/go-bindata/...@v4.0.0 && \
-              go install github.com/shuLhan/go-bindata/cmd/go-bindata@latest
+          RUN GO111MODULE=on go get github.com/shuLhan/go-bindata/...@v3.0.7
+          RUN GO111MODULE=on go get github.com/shuLhan/go-bindata/cmd/go-bindata@v3.0.7
 
           WORKDIR /src/ebpfkit
 
