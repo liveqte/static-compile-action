@@ -18,15 +18,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
-      - name: Build ebpfkit using git clone and Ubuntu 20.04
+      - name: Build ebpfkit with upgraded Go version
         run: |
           docker buildx build --load --platform linux/amd64 -t ebpfkit-builder -f - . <<EOF
-          # 最接近原作者环境的构建方式
+          # 使用 Ubuntu 20.04 环境，但升级 Go 到 1.18 以兼容依赖
           FROM ubuntu:20.04
 
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # 添加 LLVM 官方仓库以安装 clang-11 和 llvm-11
+          # 添加 LLVM 仓库安装 clang-11/llvm-11
           RUN apt-get update && apt-get install -y wget gnupg software-properties-common && \
               wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
               add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main" && \
@@ -42,27 +42,27 @@ jobs:
               linux-headers-generic \
               && rm -rf /var/lib/apt/lists/*
 
-          # 安装 Go 1.13.15
-          RUN wget -q https://golang.org/dl/go1.13.15.linux-amd64.tar.gz && \
-              tar -C /usr/local -xzf go1.13.15.linux-amd64.tar.gz && \
-              rm go1.13.15.linux-amd64.tar.gz
+          # 升级到 Go 1.18.10（解决 unsafe.Slice 错误）
+          RUN wget -q https://golang.org/dl/go1.18.10.linux-amd64.tar.gz && \
+              tar -C /usr/local -xzf go1.18.10.linux-amd64.tar.gz && \
+              rm go1.18.10.linux-amd64.tar.gz
 
           ENV PATH="/usr/local/go/bin:\${PATH}"
           ENV GO111MODULE=on
 
-          # 安装 go-bindata（使用经典 jteeuwen fork v3.0.7）
+          # 安装 go-bindata（使用 jteeuwen 经典版本）
           RUN go get github.com/jteeuwen/go-bindata/go-bindata@v3.0.7
 
-          # 设置 clang 和 llc 为 11 版本（关键！）
+          # 设置 clang/llc 默认版本
           RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-11 100 && \
               update-alternatives --install /usr/bin/llc llc /usr/bin/llc-11 100
 
-          # 克隆项目并编译
+          # 克隆并编译
           RUN git clone https://github.com/Gui774ume/ebpfkit.git /src/ebpfkit && \
               cd /src/ebpfkit && \
               make
 
-          # 检查构建结果
+          # 检查结果
           RUN ls -la /src/ebpfkit/bin/ && file /src/ebpfkit/bin/ebpfkit /src/ebpfkit/bin/ebpfkit-client
 
           EOF
