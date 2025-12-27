@@ -43,7 +43,11 @@ jobs:
 
           RUN apt-get install -y build-essential clang-11 llvm-11 graphviz git linux-headers-generic && \
               rm -rf /var/lib/apt/lists/*
-
+              
+          # 关键：安装内核头文件并建立符号链接
+          RUN apt-get update && apt-get install -y linux-headers-generic && \
+              ln -s /usr/src/linux-headers-$(ls /usr/src | grep linux-headers- | head -n 1) /usr/src/linux-headers-generic
+              
           # 安装 Go 1.18.10
           RUN wget -q https://golang.org/dl/go1.18.10.linux-amd64.tar.gz && \
               tar -C /usr/local -xzf go1.18.10.linux-amd64.tar.gz && \
@@ -62,10 +66,9 @@ jobs:
 
           # 克隆 -> 替换 Makefile -> 编译
           RUN git clone https://github.com/Gui774ume/ebpfkit.git /src/ebpfkit && \
-              cd /src/ebpfkit && \
-              echo "Fetching custom Makefile..." && \
-              curl -sSL \${EBPFKIT_URL} -o Makefile && \
-              make
+            cd /src/ebpfkit && \
+            curl -sSL ${EBPFKIT_URL} -o Makefile
+            make
           EOF
           
       - name: Extract binaries from Docker
