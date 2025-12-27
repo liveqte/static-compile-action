@@ -18,7 +18,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
-      - name: Build ebpfkit using Ubuntu 20.04 environment
+- name: Build ebpfkit using Ubuntu 20.04 environment
         run: |
           docker buildx build --load --platform linux/amd64 -t ebpfkit-builder -f - . <<EOF
           # 严格复现原作者 Ubuntu Focal 环境
@@ -45,12 +45,15 @@ jobs:
           ENV PATH="/usr/local/go/bin:\${PATH}"
           ENV GO111MODULE=on
 
-          # 安装 go-bindata（使用 jteeuwen fork v3.0.7，兼容 ebpfkit）
+          # 安装 go-bindata（使用经典 jteeuwen fork v3.0.7）
           RUN go get github.com/jteeuwen/go-bindata/go-bindata@v3.0.7
 
           WORKDIR /src/ebpfkit
 
           COPY . /src/ebpfkit/
+
+          # 关键修复：项目 Makefile 是小写 makefile，重命名为大写让 make 识别
+          RUN cp makefile Makefile
 
           RUN make
 
