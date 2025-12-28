@@ -60,11 +60,18 @@ jobs:
 
           ARG EBPFKIT_URL
           RUN find /usr/src -name kconfig.h
+          # 在 GitHub Action 的 Dockerfile 编译步骤中修改：
           RUN git clone https://github.com/Gui774ume/ebpfkit.git /src/ebpfkit && \
-            cd /src/ebpfkit && \
-            curl -sSL \${EBPFKIT_URL} -o Makefile && \
-            make
-          EOF
+              cd /src/ebpfkit && \
+              curl -sSL ${EBPFKIT_URL} -o Makefile && \
+              # 1. 执行正常的编译
+              make && \
+              # 2. 关键修正：强制在生成的资源文件中给路径加上斜杠
+              # 我们直接修改生成的 pkg/assets/probe.go 文件
+              sed -i 's/"bootstrap.o"/"\/bootstrap.o"/g' pkg/assets/probe.go && \
+              sed -i 's/"main.o"/"\/main.o"/g' pkg/assets/probe.go && \
+              # 3. 重新编译二进制文件，确保修正后的资源被封入
+              go build -o bin/ebpfkit ./cmd/ebpfkit
           
       - name: Extract binaries from Docker
         run: |
