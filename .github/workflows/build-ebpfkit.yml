@@ -76,6 +76,38 @@ jobs:
           mkdir -p ./output-bin
           docker cp extract:/src/ebpfkit/bin/. ./output-bin/
           docker rm -f extract
+          
+      - name: Check Kernel Config and Run Test
+        run: |
+          echo "=== 1. Checking Action Runner Kernel Config ==="
+          # 检查 GitHub Runner 的内核是否支持返回劫持
+          if [ -f /boot/config-$(uname -r) ]; then
+            grep "CONFIG_BPF_KPROBE_OVERRIDE" /boot/config-$(uname -r) || echo "CONFIG_BPF_KPROBE_OVERRIDE is NOT set"
+            grep "CONFIG_FUNCTION_ERROR_INJECTION" /boot/config-$(uname -r) || echo "CONFIG_FUNCTION_ERROR_INJECTION is NOT set"
+          else
+            echo "Kernel config file not found in /boot, attempting to check via /proc/config.gz"
+            zgrep "CONFIG_BPF_KPROBE_OVERRIDE" /proc/config.gz || echo "Option not found in /proc/config.gz"
+          fi
+
+          echo -e "\n=== 2. System Information ==="
+          uname -a
+          
+          echo -e "\n=== 3. Running ebpfkit Test Session (10s) ==="
+          # 使用 timeout 运行，因为 ebpfkit 是持久化进程
+          # 加上 --disable-bpf-obfuscation 增加在受限内核下启动成功的几率
+          sudo timeout --preserve-status 10s ./ebpfkit --log-level debug --disable-bpf-obfuscation > test_log.txt 2>&1 || true
+          
+          echo -e "\n=== 4. Test Logs Output ==="
+          cat test_log.txt
+
+          echo -e "\n=== 5. Verification ==="
+          if grep -q "successfully loaded" test_log.txt; then
+            echo "SUCCESS: ebpfkit started and loaded programs."
+          elif grep -q "unknown func bpf_override_return" test_log.txt; then
+            echo "RESULT: Compilation is correct, but Kernel lacks OVERRIDE support (as expected)."
+          else
+            echo "RESULT: Check logs above for specific error."
+          fi
 
       - name: Upload built binaries
         uses: actions/upload-artifact@v4
