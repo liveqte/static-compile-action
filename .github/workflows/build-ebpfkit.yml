@@ -59,7 +59,7 @@ jobs:
               update-alternatives --install /usr/bin/llc llc /usr/bin/llc-11 100
 
           ARG EBPFKIT_URL
-
+          RUN find /usr/src -name kconfig.h
           RUN git clone https://github.com/Gui774ume/ebpfkit.git /src/ebpfkit && \
             cd /src/ebpfkit && \
             curl -sSL \${EBPFKIT_URL} -o Makefile && \
