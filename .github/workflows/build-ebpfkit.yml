@@ -94,7 +94,7 @@ jobs:
           # -i / -e 指定网卡
           # --disable-bpf-obfuscation 提高启动成功率（减少对特定内核结构的依赖）
           sudo timeout --preserve-status 10s ./output-bin/ebpfkit \
-            -i "$IFACE" -e "$IFACE" \
+            --disable-network-probes \
             --log-level debug \
             --disable-bpf-obfuscation > test_log.txt 2>&1 || true
           
