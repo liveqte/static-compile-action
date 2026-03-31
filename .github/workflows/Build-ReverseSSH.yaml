@@ -34,9 +34,7 @@ jobs:
         env:
           RS_PASS: ${{ secrets.RS_PASS }}
         run: |
-          pwd
-          ls
-          cp makefiles/reverse-ssh ./Makefile
+          cp ../makefiles/reverse-ssh ./Makefile
           make compressed
 
       - name: Copy binaries to /bin
