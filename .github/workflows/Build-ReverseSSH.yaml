@@ -35,7 +35,6 @@ jobs:
           RS_PASS: ${{ secrets.RS_PASS }}
         run: |
           cp ../makefiles/reverse-ssh ./Makefile
-          cat ./Makefile
           make compressed
 
       - name: Copy binaries to /bin
