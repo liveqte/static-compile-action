@@ -33,7 +33,9 @@ jobs:
         working-directory: reverse-ssh
         env:
           RS_PASS: ${{ secrets.RS_PASS }}
-        run: make compressed
+        run: |
+          cp makefiles/reverse-ssh ./Makefile
+          make compressed
 
       - name: Copy binaries to /bin
         run: |
